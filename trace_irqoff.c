@@ -32,6 +32,8 @@
 #include <linux/sched/clock.h>
 #endif
 
+
+
 #define MAX_TRACE_ENTRIES		(SZ_1K / sizeof(unsigned long))
 #define PER_TRACE_ENTRIES_AVERAGE	(8 + 8)
 
@@ -119,7 +121,6 @@ struct per_cpu_stack_trace {
 
 	bool softirq_delayed;
 };
-
 static struct per_cpu_stack_trace __percpu *cpu_stack_trace;
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0)
@@ -264,8 +265,8 @@ static bool save_trace(struct pt_regs *regs, bool hardirq, u64 latency)
 	 * Ensure that the initialisation of @trace is complete before we
 	 * update the @nr_irqoff_trace.
 	 */
-	smp_store_release(&stack_trace->nr_irqoff_trace, nr_irqoff_trace + 1);
-
+	//smp_store_release(&stack_trace->nr_irqoff_trace, nr_irqoff_trace + 1);
+	stack_trace->nr_irqoff_trace = nr_irqoff_trace + 1;
 	if (unlikely(stack_trace->nr_entries >= MAX_TRACE_ENTRIES - 1)) {
 		pr_info("BUG: MAX_TRACE_ENTRIES too low!");
 
@@ -451,8 +452,8 @@ static void distribute_show_one(struct seq_file *m, void *v, bool hardirq)
 		unsigned long *count;
 
 		count = hardirq ?
-			per_cpu_ptr(cpu_stack_trace->hardirq_trace.latency_count, cpu) :
-			per_cpu_ptr(cpu_stack_trace->softirq_trace.latency_count, cpu);
+			per_cpu(cpu_stack_trace->hardirq_trace.latency_count, cpu) :
+			per_cpu(cpu_stack_trace->softirq_trace.latency_count, cpu);
 
 		for (i = 0; i < MAX_LATENCY_RECORD; i++)
 			latency_count[i] += count[i];
@@ -524,8 +525,8 @@ static void trace_latency_show_one(struct seq_file *m, void *v, bool hardirq)
 		/**
 		 * Paired with smp_store_release() in the save_trace().
 		 */
-		nr_irqoff_trace = smp_load_acquire(&stack_trace->nr_irqoff_trace);
-
+		//nr_irqoff_trace = smp_load_acquire(&stack_trace->nr_irqoff_trace);
+		nr_irqoff_trace = stack_trace->nr_irqoff_trace;
 		if (!nr_irqoff_trace)
 			continue;
 
@@ -648,8 +649,8 @@ static void trace_irqoff_cancel_timers(void)
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 4, 0)
 #include <linux/string.h>
-
-static int kstrtobool_from_user(const char __user *s, size_t count, bool *res)
+#endif
+static int kstrtobool_from_user_local(const char __user *s, size_t count, bool *res)
 {
 	/* Longest string needed to differentiate, newline, terminator */
 	char buf[4];
@@ -660,14 +661,13 @@ static int kstrtobool_from_user(const char __user *s, size_t count, bool *res)
 	buf[count] = '\0';
 	return strtobool(buf, res);
 }
-#endif
 
 static ssize_t enable_write(struct file *file, const char __user *buf,
 			    size_t count, loff_t *ppos)
 {
 	bool enable;
 
-	if (kstrtobool_from_user(buf, count, &enable))
+	if (kstrtobool_from_user_local(buf, count, &enable))
 		return -EINVAL;
 
 	if (!!enable == !!trace_enable)
